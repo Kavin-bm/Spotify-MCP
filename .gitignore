@@ -1,0 +1,20 @@
+# Binaries
+spotify-mcp
+/bin/
+
+# Environment secrets — never commit these
+.env
+*.env
+!.env.example
+
+# macOS
+.DS_Store
+
+# Go build artifacts
+*.o
+*.a
+*.so
+
+# Test cache
+/tmp/
+coverage.out
