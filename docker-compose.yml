@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  spotify-mcp:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET}
+      - SPOTIFY_REFRESH_TOKEN=${SPOTIFY_REFRESH_TOKEN}
+      - SPOTIFY_DEVICE_NAME=${SPOTIFY_DEVICE_NAME}
+      - SPOTIFY_DEVICE_ID=${SPOTIFY_DEVICE_ID}
+      - PORT=8080
+    restart: unless-stopped
