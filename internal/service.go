@@ -237,3 +237,8 @@ func (s *Service) ListSavedTracks(ctx context.Context, limit, offset int) ([]*ty
 	}
 	return s.provider.ListSavedTracks(ctx, limit, offset)
 }
+
+// SearchByType is a convenience wrapper that searches a single content type.
+func (s *Service) SearchByType(ctx context.Context, query, contentType string, limit int) (*types.SearchResult, error) {
+	return s.Search(ctx, query, []string{contentType}, limit)
+}
