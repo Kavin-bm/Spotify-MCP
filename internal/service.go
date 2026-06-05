@@ -154,7 +154,7 @@ func (s *Service) SkipPrevious(ctx context.Context, requestedDeviceID string) er
 
 func (s *Service) SetVolume(ctx context.Context, percent int, requestedDeviceID string) error {
 	if percent < 0 || percent > 100 {
-		return fmt.Errorf("volume_percent must be between 0 and 100, got %d", percent)
+		return fmt.Errorf("volume_percent must be in range [0, 100], got %d", percent)
 	}
 	deviceID, err := s.resolveDeviceID(ctx, requestedDeviceID)
 	if err != nil {
