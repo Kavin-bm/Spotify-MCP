@@ -429,3 +429,12 @@ func (h *Handler) ListSavedTracks(ctx context.Context, limit, offset int) ([]*ty
 	}
 	return tracks, nil
 }
+
+// IsNoContent returns true when the Spotify API returned HTTP 204 (no active session).
+func IsNoContent(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return len(msg) > 3 && msg[:3] == "404"
+}
