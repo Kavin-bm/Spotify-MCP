@@ -1,106 +1,117 @@
-# 🎵 Spotify MCP Server
+<div align="center">
+  <img src="assets/banner.jpg" alt="Spotify MCP" width="100%" />
+</div>
 
-A **Model Context Protocol (MCP)** server that exposes the Spotify Web API as a set of AI-callable tools. Connect any MCP-compatible AI assistant (Claude, Cursor, etc.) to control Spotify playback, manage playlists, search music, and more — all through natural language.
+<br/>
+
+<div align="center">
+
+[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square&logo=go&logoColor=white)](https://golang.org)
+[![MCP](https://img.shields.io/badge/MCP-compatible-1DB954?style=flat-square)](https://modelcontextprotocol.io)
+[![Spotify API](https://img.shields.io/badge/Spotify_Web_API-v1-1DB954?style=flat-square&logo=spotify&logoColor=white)](https://developer.spotify.com)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square&logo=docker&logoColor=white)](https://hub.docker.com)
+
+**Talk to your music. Control Spotify through any AI assistant.**
+
+[What it does](#what-it-does) · [Quick start](#quick-start) · [Tools](#tools) · [Configuration](#configuration)
+
+</div>
 
 ---
 
-## ✨ Features
+## What it does
 
-| Category | Tools |
-|---|---|
-| 🔍 **Search** | `search` — tracks, albums, artists, playlists |
-| ▶️ **Playback** | `play_music`, `pause_playback`, `resume_playback`, `skip_next`, `skip_previous` |
-| 🔊 **Device** | `list_devices`, `transfer_playback`, `set_volume` |
-| 📋 **Playlists** | `list_playlists`, `get_playlist`, `get_playlist_tracks`, `create_playlist`, `append_playlist_tracks` |
-| 📚 **Library** | `list_recently_played`, `list_saved_tracks` |
-| 📡 **State** | `now_playing` |
+Spotify MCP is a **[Model Context Protocol](https://modelcontextprotocol.io)** server that bridges your AI assistant and Spotify. Connect Claude, Cursor, or any MCP client — then control your music in plain language.
+
+```
+"Play something like Arctic Monkeys but more chill"
+→ search → play_music
+
+"Create a playlist from the last 10 songs I heard"
+→ list_recently_played → create_playlist → append_playlist_tracks
+
+"What's playing? Turn it down a bit."
+→ now_playing → set_volume
+```
+
+No device IDs. No URIs. No manual API calls. Just ask.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  AI Assistant (MCP Client)           │
-│            (Claude / Cursor / any MCP client)        │
-└───────────────────────┬─────────────────────────────┘
-                        │ MCP over SSE (HTTP)
-                        ▼
-┌─────────────────────────────────────────────────────┐
-│                  Spotify MCP Server                  │
-│                                                      │
-│  ┌──────────────┐  ┌────────────┐  ┌─────────────┐  │
-│  │   MCP Tools  │  │  Service   │  │   Handler   │  │
-│  │  (tools.go)  │─▶│(service.go)│─▶│(handler.go) │  │
-│  └──────────────┘  └────────────┘  └──────┬──────┘  │
-│                                           │         │
-└───────────────────────────────────────────┼─────────┘
-                                            │ HTTPS + OAuth2
-                                            ▼
-                              ┌─────────────────────────┐
-                              │   Spotify Web API        │
-                              └─────────────────────────┘
+  AI Assistant (Claude / Cursor / any MCP client)
+         │
+         │  MCP over SSE
+         ▼
+  ┌──────────────────────────────────┐
+  │         Spotify MCP Server       │
+  │                                  │
+  │  Tools ──▶ Service ──▶ Handler   │
+  │              │                   │
+  │    smart device resolution       │
+  │    OAuth2 auto-refresh           │
+  └─────────────────┬────────────────┘
+                    │  HTTPS
+                    ▼
+           Spotify Web API
 ```
 
-**Key design decisions:**
-- **Stateless service layer** — device ID resolution is handled transparently with in-memory caching. If a `SPOTIFY_DEVICE_NAME` is configured, callers never need to pass `device_id`.
-- **OAuth2 refresh-token flow** — tokens are rotated automatically. No cron jobs, no manual rotation.
-- **Clean interfaces** — `types.SpotifyProvider` decouples the service from the Spotify SDK, making the handler fully testable with mocks.
+**Design principles:**
+- **Zero secrets in code** — everything via env vars
+- **Auto-rotating tokens** — OAuth2 refresh handled transparently
+- **Smart device resolution** — set `SPOTIFY_DEVICE_NAME` once, never pass `device_id` again
+- **Clean interface boundary** — `SpotifyProvider` is fully mockable for testing
 
 ---
 
-## Quick Start
+## Quick start
 
-### 1. Get Spotify credentials
+### 1 — Get credentials
 
-1. Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) and create an app.
-2. Add `http://localhost:8888/callback` as a redirect URI.
-3. Note your **Client ID** and **Client Secret**.
-4. Use the [Spotify OAuth guide](https://developer.spotify.com/documentation/web-api/concepts/authorization) to generate a **refresh token** with these scopes:
+Create an app at [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and generate a refresh token with these scopes:
 
 ```
-user-read-playback-state
-user-modify-playback-state
-user-read-currently-playing
-playlist-read-private
-playlist-modify-public
-playlist-modify-private
-user-library-read
-user-read-recently-played
+user-read-playback-state  user-modify-playback-state  user-read-currently-playing
+playlist-read-private  playlist-modify-public  playlist-modify-private
+user-library-read  user-read-recently-played
 ```
 
-### 2. Configure environment
+> Need help getting a refresh token? Spotify's [Authorization Guide](https://developer.spotify.com/documentation/web-api/concepts/authorization) walks you through PKCE flow.
+
+### 2 — Configure
 
 ```bash
 cp .env.example .env
-# Fill in your credentials:
-# SPOTIFY_CLIENT_ID=...
-# SPOTIFY_CLIENT_SECRET=...
-# SPOTIFY_REFRESH_TOKEN=...
 ```
 
-### 3. Run the server
+```env
+SPOTIFY_CLIENT_ID=your_client_id
+SPOTIFY_CLIENT_SECRET=your_client_secret
+SPOTIFY_REFRESH_TOKEN=your_refresh_token
 
-**Option A — Go directly:**
+# Optional but recommended — skip device_id on every call
+SPOTIFY_DEVICE_NAME=My Speaker
+```
+
+### 3 — Run
+
+**Go**
 ```bash
 go run .
 ```
 
-**Option B — Docker:**
+**Docker**
 ```bash
 docker-compose up
 ```
 
-The MCP server starts on `http://localhost:8080`.
+Server starts at `http://localhost:8080`.
 
----
+### 4 — Connect your AI
 
-## MCP Client Configuration
-
-### Claude Desktop
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
+**Claude Desktop** — `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
@@ -111,105 +122,99 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 }
 ```
 
-### Cursor / VS Code
-
-Add to your MCP config:
-
+**Cursor** — MCP settings
 ```json
 {
-  "spotify": {
-    "url": "http://localhost:8080/sse"
-  }
+  "spotify": { "url": "http://localhost:8080/sse" }
 }
 ```
 
 ---
 
-## Tool Reference
+## Tools
 
-### `search`
-Search Spotify for any content type.
+16 tools across 5 categories.
 
-| Param | Type | Description |
-|---|---|---|
-| `query` | string | Search query |
-| `types` | string[] | `track`, `album`, `artist`, `playlist` (default: all) |
-| `limit` | int | Max results per type (default: 10) |
+### Search & Discovery
+| Tool | Description |
+|---|---|
+| `search` | Search tracks, albums, artists, or playlists — returns URIs |
 
-### `play_music`
-Start playback of a Spotify URI.
+### Playback
+| Tool | Description |
+|---|---|
+| `play_music` | Play any Spotify URI (track, album, artist, playlist) |
+| `pause_playback` | Pause the current session |
+| `resume_playback` | Resume a paused session |
+| `skip_next` | Skip to the next track |
+| `skip_previous` | Go back to the previous track |
 
-| Param | Type | Description |
-|---|---|---|
-| `uri` | string | `spotify:track:…`, `spotify:album:…`, `spotify:playlist:…` |
-| `device_id` | string | Target device (optional if `SPOTIFY_DEVICE_NAME` is set) |
+### Devices & Volume
+| Tool | Description |
+|---|---|
+| `list_devices` | List all Spotify Connect devices |
+| `transfer_playback` | Move the session to a different device |
+| `set_volume` | Set volume 0–100 |
+| `now_playing` | Get current track, device, progress, shuffle state |
 
-### `now_playing`
-Returns current playback state — track, artist, album, device, volume, progress.
+### Playlists
+| Tool | Description |
+|---|---|
+| `list_playlists` | List the user's playlists |
+| `get_playlist` | Fetch a playlist by ID |
+| `get_playlist_tracks` | Get tracks inside a playlist |
+| `create_playlist` | Create a new playlist, optionally seeded with tracks |
+| `append_playlist_tracks` | Add tracks to an existing playlist |
 
-### `set_volume`
-| Param | Type | Description |
-|---|---|---|
-| `volume_percent` | int | 0–100 |
-| `device_id` | string | Optional |
-
-### `create_playlist`
-| Param | Type | Description |
-|---|---|---|
-| `title` | string | Playlist name |
-| `description` | string | Optional description |
-| `public` | bool | Public or private |
-| `track_uris` | string[] | Optional initial tracks |
-
-> See all tools in [`internal/tools.go`](internal/tools.go).
-
----
-
-## Device Auto-Resolution
-
-Set `SPOTIFY_DEVICE_NAME` to the name of your Spotify Connect device (e.g. the name configured in `librespot --name`). The server resolves the device ID on first use and caches it in memory. If a playback call fails with a device-related error, the cache is automatically invalidated and the device is re-resolved.
-
-Without `SPOTIFY_DEVICE_NAME`, you must call `list_devices` first and pass `device_id` to all playback calls.
+### Library
+| Tool | Description |
+|---|---|
+| `list_recently_played` | Recently played tracks |
+| `list_saved_tracks` | Liked songs |
 
 ---
 
-## Environment Variables
+## Configuration
 
 | Variable | Required | Description |
 |---|---|---|
 | `SPOTIFY_CLIENT_ID` | ✅ | Spotify app client ID |
 | `SPOTIFY_CLIENT_SECRET` | ✅ | Spotify app client secret |
 | `SPOTIFY_REFRESH_TOKEN` | ✅ | OAuth2 refresh token |
-| `SPOTIFY_DEVICE_NAME` | — | Auto-resolve device by name |
-| `SPOTIFY_DEVICE_ID` | — | Explicit device ID (overrides name) |
+| `SPOTIFY_DEVICE_NAME` | — | Auto-resolve device by name (recommended) |
+| `SPOTIFY_DEVICE_ID` | — | Explicit device ID — overrides name lookup |
 | `PORT` | — | HTTP port (default: `8080`) |
 
+### Device resolution
+
+When `SPOTIFY_DEVICE_NAME` is set, the server resolves the device ID on first call, caches it, and injects it silently into every playback operation. If the device goes offline and the cache goes stale, it's invalidated automatically on the next device error.
+
+Without it, you'll need to call `list_devices` and pass `device_id` manually.
+
 ---
 
-## Project Structure
+## Project structure
 
 ```
-.
-├── main.go                    # Entrypoint
+├── main.go                  # Entrypoint — config → server → listen
 ├── config/
-│   └── config.go              # Config loaded from env vars
+│   └── config.go            # Env-based config with fail-fast validation
 ├── types/
-│   ├── interfaces.go          # SpotifyProvider interface
-│   └── spotify.go             # Domain types (Track, Playlist, Device, …)
+│   ├── interfaces.go        # SpotifyProvider — the core abstraction
+│   └── spotify.go           # Domain types: Track, Playlist, Device, …
 ├── internal/
-│   ├── server.go              # MCP HTTP server lifecycle
-│   ├── service.go             # Business logic + device resolution
-│   ├── tools.go               # MCP tool registration + formatters
+│   ├── server.go            # MCP SSE server lifecycle
+│   ├── service.go           # Business logic + device resolution cache
+│   ├── tools.go             # 16 MCP tools + input schemas + formatters
 │   └── spotify/
-│       ├── handler.go         # Spotify Web API client (OAuth2)
-│       └── mapper.go          # API response → domain type mappers
+│       ├── handler.go       # Spotify Web API client (OAuth2 + HTTP)
+│       └── mapper.go        # API responses → domain types
 ├── Dockerfile
-├── docker-compose.yml
-└── .env.example
+└── docker-compose.yml
 ```
 
 ---
 
-## License
-
-MIT
+<div align="center">
+  <sub>Built with Go · Spotify Web API · Model Context Protocol</sub>
+</div>
